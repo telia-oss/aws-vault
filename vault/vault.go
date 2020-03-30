@@ -123,6 +123,7 @@ func NewSSOCredentialsProvider(k *CredentialKeyring, config *Config) (credential
 	}
 
 	ssoRoleProvider := &SSORoleProvider{
+		Keyring:      k,
 		SSOClient:    sso.New(sess),
 		OIDCClient:   ssooidc.New(sess),
 		AccountID:    config.SSOAccountID,
@@ -134,7 +135,6 @@ func NewSSOCredentialsProvider(k *CredentialKeyring, config *Config) (credential
 
 	if UseSessionCache {
 		return &CachedSSORoleProvider{
-			Keyring:         k,
 			CredentialsName: config.ProfileName,
 			ExpiryWindow:    defaultExpirationWindow,
 			Provider:        ssoRoleProvider,
