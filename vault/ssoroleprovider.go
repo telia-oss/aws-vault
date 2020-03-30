@@ -89,22 +89,13 @@ func (p *SSORoleProvider) Retrieve() (credentials.Value, error) {
 }
 
 func (p *SSORoleProvider) getRoleCredentials() (*sts.Credentials, error) {
-	clientCreds, found, err := p.getClientCredentials()
+	accessToken, err := p.GetSSOAccessToken()
 	if err != nil {
 		return nil, err
 	}
 
-	if !found {
-		clientCreds = &clientCredentials{}
-	}
-	clientCreds, err = p.populateClientCredentials(clientCreds)
-
-	if err := p.setClientCredentials(clientCreds); err != nil {
-		return nil, err
-	}
-
 	resp, err := p.SSOClient.GetRoleCredentials(&sso.GetRoleCredentialsInput{
-		AccessToken: aws.String(clientCreds.AccessToken),
+		AccessToken: aws.String(accessToken),
 		AccountId:   aws.String(p.AccountID),
 		RoleName:    aws.String(p.RoleName),
 	})
@@ -127,38 +118,30 @@ func (p *SSORoleProvider) getRoleCredentials() (*sts.Credentials, error) {
 	return creds, nil
 }
 
-type clientCredentials struct {
-	ClientID              string
-	ClientSecret          string
-	ClientExpiration      time.Time
-	AccessToken           string
-	AccessTokenExpiration time.Time
-}
-
-func (p *SSORoleProvider) getClientCredentials() (*clientCredentials, bool, error) {
+func (p *SSORoleProvider) GetSSOAccessToken() (string, error) {
 	hasClientCredentials, err := p.Keyring.Has(p.StartURL)
 	if err != nil {
-		return nil, false, err
+		return "", err
 	}
 
 	if !hasClientCredentials {
-		return nil, false, nil
+		return "", nil
 	}
 
 	item, err := p.Keyring.Keyring.Get(p.StartURL)
 	if err != nil {
-		return nil, false, err
+		return "", err
 	}
 
-	var creds *clientCredentials
+	var creds *ssoClientCredentials
 	if err = json.Unmarshal(item.Data, &creds); err != nil {
-		return nil, false, fmt.Errorf("Invalid data in keyring: %v", err)
+		return "", fmt.Errorf("Invalid data in keyring: %v", err)
 	}
 
-	return creds, true, nil
+	return creds, nil
 }
 
-func (p *SSORoleProvider) setClientCredentials(creds *clientCredentials) error {
+func (p *SSORoleProvider) setClientCredentials(creds *ssoClientCredentials) error {
 	bytes, err := json.Marshal(creds)
 	if err != nil {
 		return err
@@ -174,8 +157,16 @@ func (p *SSORoleProvider) setClientCredentials(creds *clientCredentials) error {
 	})
 }
 
-func (p *SSORoleProvider) populateClientCredentials(creds *clientCredentials) (*clientCredentials, error) {
-	if creds.ClientExpiration.Before(time.Now()) {
+type ssoClientCredentials struct {
+	ID                    string
+	Secret                string
+	Expiration            time.Time
+	AccessToken           string
+	AccessTokenExpiration time.Time
+}
+
+func (p *SSORoleProvider) populateClientCredentials(creds *ssoClientCredentials) (*ssoClientCredentials, error) {
+	if creds.Expiration.Before(time.Now()) {
 		client, err := p.OIDCClient.RegisterClient(&ssooidc.RegisterClientInput{
 			ClientName: aws.String(ssoClientName),
 			ClientType: aws.String(ssoClientType),
@@ -183,17 +174,17 @@ func (p *SSORoleProvider) populateClientCredentials(creds *clientCredentials) (*
 		if err != nil {
 			return nil, err
 		}
-		creds = &clientCredentials{
-			ClientID:         aws.StringValue(client.ClientId),
-			ClientSecret:     aws.StringValue(client.ClientSecret),
-			ClientExpiration: aws.MillisecondsTimeValue(client.ClientSecretExpiresAt),
+		creds = &ssoClientCredentials{
+			ID:         aws.StringValue(client.ClientId),
+			Secret:     aws.StringValue(client.ClientSecret),
+			Expiration: aws.MillisecondsTimeValue(client.ClientSecretExpiresAt),
 		}
 	}
 
 	if creds.AccessTokenExpiration.Before(time.Now()) {
 		auth, err := p.OIDCClient.StartDeviceAuthorization(&ssooidc.StartDeviceAuthorizationInput{
-			ClientId:     aws.String(creds.ClientID),
-			ClientSecret: aws.String(creds.ClientSecret),
+			ClientId:     aws.String(creds.ID),
+			ClientSecret: aws.String(creds.Secret),
 			StartUrl:     aws.String(p.StartURL),
 		})
 		if err != nil {
@@ -225,8 +216,8 @@ func (p *SSORoleProvider) populateClientCredentials(creds *clientCredentials) (*
 			time.Sleep(3 * time.Second)
 
 			token, err := p.OIDCClient.CreateToken(&ssooidc.CreateTokenInput{
-				ClientId:     aws.String(creds.ClientID),
-				ClientSecret: aws.String(creds.ClientSecret),
+				ClientId:     aws.String(creds.ID),
+				ClientSecret: aws.String(creds.Secret),
 				DeviceCode:   auth.DeviceCode,
 				GrantType:    aws.String(oAuthTokenGrantType),
 			})
