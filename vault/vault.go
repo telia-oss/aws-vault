@@ -10,6 +10,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sso"
+	"github.com/aws/aws-sdk-go/service/ssooidc"
 	"github.com/aws/aws-sdk-go/service/sts"
 )
 
@@ -113,6 +115,35 @@ func NewAssumeRoleProvider(creds *credentials.Credentials, config *Config) (*Ass
 	}, nil
 }
 
+// NewSSOCredentialsProvider creates a provider for SSO credentials
+func NewSSOCredentialsProvider(k *CredentialKeyring, config *Config) (credentials.Provider, error) {
+	sess, err := session.NewSession(&aws.Config{Region: aws.String(config.SSORegion)})
+	if err != nil {
+		return nil, err
+	}
+
+	ssoRoleProvider := &SSORoleProvider{
+		SSOClient:    sso.New(sess),
+		OIDCClient:   ssooidc.New(sess),
+		AccountID:    config.SSOAccountID,
+		RoleName:     config.SSORoleName,
+		StartURL:     config.SSOStartURL,
+		Duration:     config.AssumeRoleDuration,
+		ExpiryWindow: defaultExpirationWindow,
+	}
+
+	if UseSessionCache {
+		return &CachedSSORoleProvider{
+			Keyring:         k,
+			CredentialsName: config.ProfileName,
+			ExpiryWindow:    defaultExpirationWindow,
+			Provider:        ssoRoleProvider,
+		}, nil
+	}
+
+	return ssoRoleProvider, nil
+}
+
 type tempCredsCreator struct {
 	keyring    *CredentialKeyring
 	chainedMfa string
@@ -136,6 +167,8 @@ func (t *tempCredsCreator) provider(config *Config) (credentials.Provider, error
 		if err != nil {
 			return nil, err
 		}
+	} else if config.HasSSOStartURL() {
+		return NewSSOCredentialsProvider(t.keyring, config)
 	} else {
 		return nil, fmt.Errorf("profile %s: credentials missing", config.ProfileName)
 	}

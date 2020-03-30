@@ -494,6 +494,10 @@ func (c *Config) HasRole() bool {
 	return c.RoleARN != ""
 }
 
+func (c *Config) HasSSOStartURL() bool {
+	return c.SSOStartURL != ""
+}
+
 // CanUseGetSessionToken determines if GetSessionToken should be used, and if not returns a reason
 func (c *Config) CanUseGetSessionToken() (bool, string) {
 	if !UseSession {
