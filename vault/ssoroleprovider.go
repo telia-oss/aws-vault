@@ -3,6 +3,7 @@ package vault
 import (
 	"log"
 	"os/exec"
+	"runtime"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -14,6 +15,8 @@ import (
 )
 
 const (
+	ssoClientName       = "aws-vault"
+	ssoClientType       = "public"
 	oAuthTokenGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 )
 
@@ -84,8 +87,8 @@ func (p *SSORoleProvider) Retrieve() (credentials.Value, error) {
 
 func (p *SSORoleProvider) getRoleCredentials() (*sts.Credentials, error) {
 	client, err := p.OIDCClient.RegisterClient(&ssooidc.RegisterClientInput{
-		ClientName: aws.String("aws-vault"),
-		ClientType: aws.String("public"),
+		ClientName: aws.String(ssoClientName),
+		ClientType: aws.String(ssoClientType),
 	})
 	if err != nil {
 		return nil, err
@@ -101,7 +104,17 @@ func (p *SSORoleProvider) getRoleCredentials() (*sts.Credentials, error) {
 	}
 
 	// Open browswer for user to complete login flow
-	if err := exec.Command("open", aws.StringValue(auth.VerificationUriComplete)).Run(); err != nil {
+	var browserCmd string
+
+	switch runtime.GOOS {
+	case "darwin":
+		browserCmd = "open"
+	case "linux":
+		browserCmd = "xdg-open"
+	case "windows":
+		browserCmd = "start"
+	}
+	if err := exec.Command(browserCmd, aws.StringValue(auth.VerificationUriComplete)).Run(); err != nil {
 		return nil, err
 	}
 
