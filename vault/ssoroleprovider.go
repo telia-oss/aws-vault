@@ -118,14 +118,156 @@ func (p *SSORoleProvider) getRoleCredentials() (*sts.Credentials, error) {
 	return creds, nil
 }
 
+type OIDCSSOClientService struct {
+	Client *ssooidc.Client
+	Name   string
+}
+
+type OIDCSSOClientCredentials struct {
+	ClientId     string
+	ClientSecret string
+	Expiration   *time.Time
+}
+
+func NewOIDCSSOClientService(client *ssooidc.Client, name string) *OIDCSSOClientService {
+
+	return &OIDCSSOClientService{Client: name, Name: name}
+}
+
+func (s *OIDCSSOClientService) Register(name string) (*OIDCSSOClientCredentials, err) {
+
+	// Network call
+	resp, err := s.Client.RegisterClient(&ssooidc.RegisterClientInput{
+		ClientName: aws.String(clientName),
+		ClientType: aws.String("public"),
+	})
+
+	if err != nil {
+		panic(err)
+	}
+
+	return &SSOClientCredentials{ClientID: resp.ClientId, ClientSecret: resp.Secret, Expiration: resp.Expiration}
+}
+
+func (s *NewOIDCSSOClientService) Authorize(credentials *OIDCSSOClientCredentials) *OIDCSSOSessionCredentials {
+
+	// Device authorization
+	auth, err := s.Client.StartDeviceAuthorization(&ssooidc.StartDeviceAuthorizationInput{
+		ClientId:     client.ClientId,
+		ClientSecret: client.ClientSecret,
+		StartUrl:     aws.String(deviceAutorizationURL),
+	})
+
+	if err != nil {
+		panic(err)
+	}
+
+}
+
+type OIDCSSOSessionService struct {
+	Client            *ssooidc.Client
+	ClientCredentials *SSOClientCredentials
+}
+
+type OIDCSSOSessionCredentials struct {
+	AccessToken string
+	Expiration  time.Time
+}
+
+func NewOIDCSSOSessionService(client *ssooidc.Client, credentials *OIDCSSOClientCredentials) *OIDCSSOClientService {
+	return &OIDCSSOSessionService{Client: client, ClientCredentials: credentials}
+}
+
+func (s *OIDCSSOSessionService) Authorize(deviceAutorizationURL string) *OIDCSSOSessionCredentials {
+
+	// Device authorization
+	auth, err := s.Client.StartDeviceAuthorization(&ssooidc.StartDeviceAuthorizationInput{
+		ClientId:     credentials.ClientId,
+		ClientSecret: credentials.ClientSecret,
+		StartUrl:     aws.String(deviceAutorizationURL),
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	var userToken *ssooidc.CreateTokenOutput
+	usertoken = s.performAuthentication(auth.verificationUriComplete)
+
+	return &OIDCSSOSessionCredentials{AccessToken: userToken.AccessToken, Expiration: usertoken.Expiration}
+}
+
+func (s *OIDCSSOSessionService) requestAuthentication(verificationUriComplete string) {
+
+	// Open browswer for user to complete login flow
+	var browserCmd string
+
+	switch runtime.GOOS {
+	case "darwin":
+		browserCmd = "open"
+	case "linux":
+		browserCmd = "xdg-open"
+	case "windows":
+		browserCmd = "start"
+	default:
+		return nil, fmt.Errorf("unable to open browser: unknown operating system: %s", runtime.GOOS)
+	}
+	if err := exec.Command(browserCmd, aws.StringValue(verificationUriComplete)).Run(); err != nil {
+		return nil, err
+	}
+
+	return userToken * ssooidc.CreateTokenOutput
+
+}
+
+func (s *OIDCSSOSessionService) performAuthentication() {
+
+Loop:
+	for {
+		// Sleep to allow login flow complete
+		time.Sleep(3 * time.Second)
+
+		token, err := oidcClient.CreateToken(&ssooidc.CreateTokenInput{
+			ClientId:     client.ClientId,
+			ClientSecret: client.ClientSecret,
+			DeviceCode:   auth.DeviceCode,
+			GrantType:    aws.String(tokenGrantType),
+		})
+		if err != nil {
+			e, ok := err.(awserr.Error)
+			if !ok || e.Code() != ssooidc.ErrCodeAuthorizationPendingException {
+				panic(err)
+			}
+			continue Loop
+		}
+		userToken = token
+		break Loop
+	}
+}
+
+func setup() {
+
+	// Check if there's an existing OIDC Client Credentials stored in Keychain
+
+	// False
+	// Create and Register the OIDC Client
+	// Check if there's an existing OIDC SSO Session Credentials
+	// Check if the Session Credentials has Expired
+	// False
+	// Create and Save Session Credentials using the Session Service
+	// Authenticate againt AWS to get the temporary credentials
+	// Follow the code path for Sessions
+}
+
 func (p *SSORoleProvider) GetSSOAccessToken() (string, error) {
 	hasClientCredentials, err := p.Keyring.Has(p.StartURL)
 	if err != nil {
 		return "", err
 	}
 
+	var creds *ssoClientCredentials
+
 	if !hasClientCredentials {
-		return "", nil
+		creds = newSSOClient()
 	}
 
 	item, err := p.Keyring.Keyring.Get(p.StartURL)
