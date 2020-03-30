@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"fmt"
 	"log"
 	"os/exec"
 	"runtime"
@@ -113,6 +114,8 @@ func (p *SSORoleProvider) getRoleCredentials() (*sts.Credentials, error) {
 		browserCmd = "xdg-open"
 	case "windows":
 		browserCmd = "start"
+	default:
+		return nil, fmt.Errorf("unable to open browser: unknown operating system: %s", runtime.GOOS)
 	}
 	if err := exec.Command(browserCmd, aws.StringValue(auth.VerificationUriComplete)).Run(); err != nil {
 		return nil, err
