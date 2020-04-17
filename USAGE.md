@@ -1,26 +1,29 @@
 # Usage
 
-* [Getting Help](#getting-help)
-* [Config](#config)
-* [Environment variables](#environment-variables)
-* [Managing Profiles](#managing-profiles)
-  * [Using multiple profiles](#using-multiple-profiles)
-  * [Example ~/.aws/config](#example---aws-config)
-  * [Listing profiles](#listing-profiles)
-  * [Removing profiles](#removing-profiles)
-* [Backends](#backends)
-* [MFA](#mfa)
-* [Removing stored sessions](#removing-stored-sessions)
-* [Logging into AWS console](#logging-into-aws-console)
-* [Using credential helper](#using-credential-helper)
-* [Not using session credentials](#not-using-session-credentials)
-  * [Considerations](#considerations)
-  * [Assuming a role for more than 1h](#assuming-a-role-for-more-than-1h)
-  * [Being able to perform certain STS operations](#being-able-to-perform-certain-sts-operations)
-* [Rotating Credentials](#rotating-credentials)
-* [Recipes](#recipes)
-  * [Overriding the aws CLI to use aws-vault](#overriding-the-aws-cli-to-use-aws-vault)
-  * [Using a yubikey as a virtual MFA](#using-a-yubikey-as-a-virtual-mfa)
+- [Getting Help](#getting-help)
+- [Config](#config)
+- [Environment variables](#environment-variables)
+- [Managing Profiles](#managing-profiles)
+  - [Using multiple profiles](#using-multiple-profiles)
+  - [Example ~/.aws/config](#example-awsconfig)
+  - [Listing profiles](#listing-profiles)
+  - [Removing profiles](#removing-profiles)
+- [Backends](#backends)
+- [MFA](#mfa)
+- [AWS Single Sign-On (AWS SSO)](#aws-single-sign-on-aws-sso)
+  - [Example ~/.aws/config](#example-awsconfig-1)
+- [Removing stored sessions](#removing-stored-sessions)
+- [Logging into AWS console](#logging-into-aws-console)
+- [Using credential helper](#using-credential-helper)
+- [Not using session credentials](#not-using-session-credentials)
+  - [Considerations](#considerations)
+  - [Assuming a role for more than 1h](#assuming-a-role-for-more-than-1h)
+  - [Being able to perform certain STS operations](#being-able-to-perform-certain-sts-operations)
+- [Rotating Credentials](#rotating-credentials)
+- [Recipes](#recipes)
+  - [Overriding the aws CLI to use aws-vault](#overriding-the-aws-cli-to-use-aws-vault)
+  - [Using a yubikey as a virtual MFA](#using-a-yubikey-as-a-virtual-mfa)
+  - [An example config to switch profiles via environment variables](#an-example-config-to-switch-profiles-via-environment-variables)
 
 ## Getting Help
 
@@ -145,13 +148,13 @@ associated with them.
 
 ```bash
 $ aws-vault list
-Profile                  Credentials              Sessions  
-=======                  ===========              ========                 
-home                     home                        
-work                     work                     1525456570  
-work-read-only           work                        
-work-admin               work                        
-``` 
+Profile                  Credentials              Sessions
+=======                  ===========              ========
+home                     home
+work                     work                     1525456570
+work-read-only           work
+work-admin               work
+```
 
 ### Removing profiles
 
@@ -177,10 +180,9 @@ Deleted 1 sessions.
 
 ## Backends
 
-You can choose among different pluggable secret storage backends. 
+You can choose among different pluggable secret storage backends.
 
 By default, Linux uses an encrypted file but you may prefer to use the secret-service backend which [abstracts over Gnome/KDE](https://specifications.freedesktop.org/secret-service/). This can be specified on the command line with `aws-vault --backend=secret-service` or by setting the environment variable `export AWS_VAULT_BACKEND=secret-service`.
-
 
 ## MFA
 
@@ -289,7 +291,7 @@ and we'll detail after a word of caution.
 ### Considerations
 
 Before considering the 2 use cases below that use the `--no-session` parameter, you should
-understand the trade-off you are making.  
+understand the trade-off you are making.
 The AWS session offers 2 perks:
 * **a *cached* connection/session** to AWS that can authenticate you with MFA. That means that with a
   session, through `aws-vault`, you do not have to enter your MFA every time you use the command.
@@ -310,7 +312,7 @@ You can easily witness that by doing
 ```
 aws-vault exec <iam_user_profile> -- env | grep AWS
 ```
-You'll see an `AWS_ACCESS_KEY_ID` of the form `ASIAxxxxxx` which is a temporary one. Doing 
+You'll see an `AWS_ACCESS_KEY_ID` of the form `ASIAxxxxxx` which is a temporary one. Doing
 ```
 aws-vault exec <iam_user_profile> --no-session -- env | grep AWS
 ```
@@ -332,7 +334,7 @@ aws-vault: error: Failed to get credentials for default (source profile for pix4
 There are reasons though where you'd like to assume a role for a longer period. For example, when
 using a tool like [Terraform](https://www.terraform.io/), you need to have AWS credentials available
 to the application for the entire duration of the infrastructure change. And in large setups, or for
-complex resources, this can take more than 1h.  
+complex resources, this can take more than 1h.
 There are 2 solutions:
 
 1. Call aws-vault with `--no-session`. This means that the `AssumeRole` API
@@ -341,7 +343,7 @@ will be called by using directly the IAM user credentials and not opening a sess
 so long as you have setup your role to allow such a thing (AWS role are created by *default* with a
 max TTL of 1h). The drawback of this method is related to **MFA**. Since you are not using the AWS
 session, which is cached by `aws-vault`, if you use **MFA** (and you should), you'll have to enter
-your **MFA** token at every invocation of the `aws-vault` command. This can become a bit tedious.  
+your **MFA** token at every invocation of the `aws-vault` command. This can become a bit tedious.
 
 2. Start `aws-vault` as a server (`aws-vault exec <profile> -s`). This will start a background
    process that will immitate the [metadata
@@ -369,10 +371,10 @@ While using a standard `aws-vault` connection, using an IAM role or not, you can
 (except `AssumeRole`) due to the usage of the AWS session (see
 [here](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_request.html#stsapi_comparison)).
 Note that this is done for security reasons and makes sense. Needing to call the STS API from a
-session is generally a **non-standard situation**.  
+session is generally a **non-standard situation**.
 But if you are sure of your use case, using the `--no-session` parameter will solve the issue.
 
-Note that for the 
+Note that for the
 [`GetFederationToken`](https://docs.aws.amazon.com/STS/latest/APIReference/API_GetFederationToken.html)
 API, as a STS API, you can't call it from an AWS session, but you also cannot call it using an IAM
 role. This means that the only way to call `GetFederationToken` is to use both `--no-session` and an
@@ -421,36 +423,36 @@ The exec helps reduce the number of processes that are hanging around. The `$@` 
 arguments from the wrapper to the original command.
 
 
-### Using a yubikey as a virtual MFA 
+### Using a yubikey as a virtual MFA
 
 There's been attempts in the past to support yubikeys natively (#392 , #230) there's another way to go
-at this problem. [Newer](https://support.yubico.com/support/solutions/articles/15000006419-using-your-yubikey-with-authenticator-codes) 
+at this problem. [Newer](https://support.yubico.com/support/solutions/articles/15000006419-using-your-yubikey-with-authenticator-codes)
 yubikeys support generating TOTP tokens.
 
-In this [blog](https://hackernoon.com/use-a-yubikey-as-a-mfa-device-to-replace-google-authenticator-b4f4c0215f2) you can 
+In this [blog](https://hackernoon.com/use-a-yubikey-as-a-mfa-device-to-replace-google-authenticator-b4f4c0215f2) you can
 find information about this process but it boils down to this.
 
 1. Go to AWS and click on add a MFA
 2. Choose a virtual device
 3. Instead of scanning the code you can get it as text (keep it safe).
 4. Install [ykman](https://support.yubico.com/support/solutions/articles/15000012643-yubikey-manager-cli-ykman-user-manual#Introductionmrzmm1)
-5. Run this: 
+5. Run this:
 
-```bash 
+```bash
 ykman oath add YOUR_YUBIKEY_PROFILE -t
 ```
 It will ask you for a base32 text. Here you can input the text you got in 3.
 
 6. Run this command twice (wait 30 secs in between):
-```bash 
+```bash
 ykman oath code --single YOUR_YUBIKEY_PROFILE
 ```
 
 Input both values as tokens and your device should register as a virtual MFA.
 
 
-7. Now if you want to run any aws-vault command you should run this: 
-```bash 
+7. Now if you want to run any aws-vault command you should run this:
+```bash
 aws-vault exec --mfa-token $(ykman oath code --single ${YOUR_YUBIKEY_PROFILE}) ${YOUR_AWS_VAULT_PROFILE} -- aws s3 ls
 ```
 
