@@ -40,6 +40,15 @@ region=us-east-1
 parent_profile=testparentprofile1
 `)
 
+var ssoConfig = []byte(`[default]
+
+[profile Administrator-123456789012]
+sso_start_url=https://aws-sso-portal.awsapps.com/start
+sso_region=eu-west-1
+sso_account_id=123456789012
+sso_role_name=Administrator
+`)
+
 var nestedConfig = []byte(`[default]
 
 [profile testing]
@@ -166,6 +175,22 @@ func TestProfilesFromConfig(t *testing.T) {
 		{Name: "testparentprofile1", Region: "us-east-1"},
 		{Name: "testparentprofile2", ParentProfile: "testparentprofile1"},
 	}
+	actual := cfg.ProfileSections()
+
+	if diff := cmp.Diff(expected, actual); diff != "" {
+		t.Errorf("ProfileSections() mismatch (-expected +actual):\n%s", diff)
+	}
+}
+
+func TestSSOProfilesFromConfig(t *testing.T) {
+	f := newConfigFile(t, ssoConfig)
+	defer os.Remove(f)
+
+	cfg, err := vault.LoadConfig(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := []vault.ProfileSection{{Name: "administrator-123456789012", SSOStartURL: "https://aws-sso-portal.awsapps.com/start", SSORegion: "eu-west-1", SSOAccountID: "123456789012", SSORoleName: "Administrator"}}
 	actual := cfg.ProfileSections()
 
 	if diff := cmp.Diff(expected, actual); diff != "" {

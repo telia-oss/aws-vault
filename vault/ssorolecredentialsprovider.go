@@ -232,26 +232,57 @@ func (p *SSOOIDCProvider) createClientToken(creds *SSOClientCredentials) (*SSOAc
 	}
 
 	var (
-		// These are the default values defined in the following RFC:
+		// The are the default value defined in the following RFC:
 		// https://tools.ietf.org/html/draft-ietf-oauth-device-flow-15#section-3.5
-		slowDownDelay = 5 * time.Second
 		retryInterval = 5 * time.Second
 	)
+
 	if i := aws.Int64Value(auth.Interval); i > 0 {
 		retryInterval = time.Duration(i) * time.Second
 	}
 
-	for {
+	var accessToken *SSOAccessToken
+	err = retry(retryInterval, func() error {
+
 		t, err := p.OIDCClient.CreateToken(&ssooidc.CreateTokenInput{
 			ClientId:     aws.String(creds.ID),
 			ClientSecret: aws.String(creds.Secret),
 			DeviceCode:   auth.DeviceCode,
 			GrantType:    aws.String(oAuthTokenGrantType),
 		})
+
+		if err != nil {
+			return err
+		}
+
+		tokenDuration := time.Duration(aws.Int64Value(t.ExpiresIn)) * time.Second
+
+		accessToken = &SSOAccessToken{
+			Token:      aws.StringValue(t.AccessToken),
+			Expiration: time.Now().Add(tokenDuration),
+		}
+		return nil
+
+	})
+
+	return accessToken, err
+
+}
+
+func retry(retryInterval time.Duration, f func() error) error {
+
+	var (
+		// The are the default value defined in the following RFC:
+		// https://tools.ietf.org/html/draft-ietf-oauth-device-flow-15#section-3.5
+		slowDownDelay = 5 * time.Second
+	)
+
+	for {
+		err := f()
 		if err != nil {
 			e, ok := err.(awserr.Error)
 			if !ok {
-				return nil, err
+				return err
 			}
 			switch e.Code() {
 			case ssooidc.ErrCodeSlowDownException:
@@ -261,12 +292,9 @@ func (p *SSOOIDCProvider) createClientToken(creds *SSOClientCredentials) (*SSOAc
 				time.Sleep(retryInterval)
 				continue
 			default:
-				return nil, err
+				return err
 			}
 		}
-		return &SSOAccessToken{
-			Token:      aws.StringValue(t.AccessToken),
-			Expiration: time.Now().Add(time.Duration(aws.Int64Value(t.ExpiresIn)) * time.Second),
-		}, nil
+		return err
 	}
 }
