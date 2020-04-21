@@ -32,6 +32,18 @@ authorize this request, open the following URL:
 `
 )
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 . SSOOIDCClient
+type SSOOIDCClient interface {
+	CreateToken(*ssooidc.CreateTokenInput) (*ssooidc.CreateTokenOutput, error)
+	RegisterClient(*ssooidc.RegisterClientInput) (*ssooidc.RegisterClientOutput, error)
+	StartDeviceAuthorization(*ssooidc.StartDeviceAuthorizationInput) (*ssooidc.StartDeviceAuthorizationOutput, error)
+}
+
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 . SSOClient
+type SSOClient interface {
+	GetRoleCredentials(*sso.GetRoleCredentialsInput) (*sso.GetRoleCredentialsOutput, error)
+}
+
 // CachedSSORoleCredentialsProvider uses the keyring to cache SSO Role sessions.
 type CachedSSORoleCredentialsProvider struct {
 	CredentialsName string
@@ -73,7 +85,7 @@ func (p *CachedSSORoleCredentialsProvider) Retrieve() (credentials.Value, error)
 // SSORoleCredentialsProvider creates temporary credentials for an SSO Role.
 type SSORoleCredentialsProvider struct {
 	OIDCProvider *SSOOIDCProvider
-	SSOClient    *sso.SSO
+	SSOClient    SSOClient
 	AccountID    string
 	RoleName     string
 	ExpiryWindow time.Duration
@@ -137,9 +149,10 @@ type SSOAccessToken struct {
 }
 
 type SSOOIDCProvider struct {
-	OIDCClient *ssooidc.SSOOIDC
-	Keyring    *CredentialKeyring
-	StartURL   string
+	OIDCClient           SSOOIDCClient
+	Keyring              *CredentialKeyring
+	StartURL             string
+	DisableSystemBrowser bool
 }
 
 func (p *SSOOIDCProvider) GetAccessToken() (*SSOAccessToken, error) {
@@ -227,8 +240,11 @@ func (p *SSOOIDCProvider) createClientToken(creds *SSOClientCredentials) (*SSOAc
 		return nil, err
 	}
 	fmt.Fprintf(os.Stderr, authorizationTemplate, aws.StringValue(auth.VerificationUriComplete))
-	if err := open.Run(aws.StringValue(auth.VerificationUriComplete)); err != nil {
-		log.Printf("failed to open browser: %s", err)
+
+	if !p.DisableSystemBrowser {
+		if err := open.Run(aws.StringValue(auth.VerificationUriComplete)); err != nil {
+			log.Printf("failed to open browser: %s", err)
+		}
 	}
 
 	var (
